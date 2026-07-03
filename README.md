@@ -1,4 +1,8 @@
-# Ну, Погоди!
+# Ну, Погоди! — API Edition
+
+**This fork makes the game controllable through an API.** Instead of (or in addition to) keyboard input, the game can be driven programmatically — moving the wolf, toggling sound, restarting the game and reading the game state (score, misses, egg positions) from external code. This makes it suitable for bots, automation experiments and reinforcement-learning agents.
+
+This is a fork of [Ar4ikov/NuPogody](https://github.com/Ar4ikov/NuPogody).
 
 «Ну, погоди!» («Электроника ИМ-02») — электронная игра, самая известная и популярная из серии первых советских портативных электронных игр с жидкокристаллическим экраном, производимых под торговой маркой «Электроника». Производилась с 1984 года. Кроме игры, устройство обладает функцией часов и будильника. Розничная цена составляла 25 рублей (позднее — 23 рубля).
 Первоначально не имела категорийного номера. Впоследствии получила номер «Электроника ИМ-02». Аббревиатура «ИМ» означает «игра микропроцессорная».
