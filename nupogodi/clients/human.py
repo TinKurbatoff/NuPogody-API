@@ -12,8 +12,10 @@ preserving the exact feel of the original ``game.py``:
 * Because an egg stays at the catch point for a full tick before the catch is
   resolved, the player gets the same ~1 s reaction window as the original.
 
-Controls (unchanged): WASD / arrows move the basket, ``1`` toggles sound,
-``SPACE`` restarts at game over, ``ESC``/``Q`` quits.
+Controls: four position buttons pick a basket quadrant directly, matching the
+feel of the real four-button device — ``A`` = left-up, ``Z`` = left-down,
+``M`` = right-down, ``K`` = right-up. Arrow keys still move on the two axes.
+``1`` toggles sound, ``SPACE`` restarts at game over, ``ESC``/``Q`` quits.
 """
 
 from __future__ import annotations
@@ -57,18 +59,31 @@ class HumanClient:
 
     # -- input -------------------------------------------------------------
 
+    def _quadrant_buttons(self) -> dict:
+        """Four position buttons -> absolute (side, level), like the real device."""
+        pg = self.pygame
+        return {
+            pg.K_a: (Side.LEFT, Level.UP),     # left-top
+            pg.K_z: (Side.LEFT, Level.DOWN),   # left-bottom
+            pg.K_m: (Side.RIGHT, Level.DOWN),  # right-bottom
+            pg.K_k: (Side.RIGHT, Level.UP),    # right-top
+        }
+
     def _handle_keydown(self, key) -> bool:
         """Update requested position / toggles. Returns False to quit."""
         pg = self.pygame
         if key in (pg.K_ESCAPE, pg.K_q):
             return False
-        if key in (pg.K_LEFT, pg.K_a):
+        buttons = self._quadrant_buttons()
+        if key in buttons:
+            self.side, self.level = buttons[key]
+        elif key == pg.K_LEFT:
             self.side = Side.LEFT
-        elif key in (pg.K_RIGHT, pg.K_d):
+        elif key == pg.K_RIGHT:
             self.side = Side.RIGHT
-        elif key in (pg.K_UP, pg.K_w):
+        elif key == pg.K_UP:
             self.level = Level.UP
-        elif key in (pg.K_DOWN, pg.K_s):
+        elif key == pg.K_DOWN:
             self.level = Level.DOWN
         elif key == pg.K_1:
             self.sound_on = not self.sound_on

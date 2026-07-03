@@ -227,16 +227,24 @@ class WolfPlayer(pygame.sprite.Sprite):
         self.images_x_pos = {k: v for k, v in zip(sides, self.images)}
 
     def update_position(self, _key):
-        if _key == K_LEFT or _key == K_a:
+        # Four position buttons pick a quadrant directly (real four-button feel).
+        if _key == K_a:            # left-top
+            self.left, self.up = True, True
+        elif _key == K_z:          # left-bottom
+            self.left, self.up = True, False
+        elif _key == K_k:          # right-top
+            self.left, self.up = False, True
+        elif _key == K_m:          # right-bottom
+            self.left, self.up = False, False
+
+        # Arrow keys still move on the two axes.
+        elif _key == K_LEFT:
             self.left = True
-
-        elif _key == K_RIGHT or _key == K_d:
+        elif _key == K_RIGHT:
             self.left = False
-
-        elif _key == K_UP or _key == K_w:
+        elif _key == K_UP:
             self.up = True
-
-        elif _key == K_DOWN or _key == K_s:
+        elif _key == K_DOWN:
             self.up = False
 
     def update(self):

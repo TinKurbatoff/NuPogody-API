@@ -22,12 +22,16 @@ python game.py
 
 ## Управление
 
-* **A** — влево
-* **D** — вправо
-* **W** — вверх
-* **S** — вниз
-* **1** - Включить/выключить звук
-* **ENTER** - перезапуск
+Четыре кнопки положения выбирают угол корзины напрямую — как на настоящем
+четырёхкнопочном пульте:
+
+* **A** — влево-вверх
+* **Z** — влево-вниз
+* **M** — вправо-вниз
+* **K** — вправо-вверх
+* **Стрелки** — перемещение по двум осям
+* **1** — Включить/выключить звук
+* **ENTER** — перезапуск
 
 ## Скриншоты
 
@@ -88,8 +92,10 @@ quadrant, or `0` if empty. Constructor flags: `flatten_obs`, `max_steps`,
 
 ## Running it
 
-**(a) Human client** — play with the keyboard (WASD/arrows move, `1` toggles
-sound, `SPACE` restarts, `ESC`/`Q` quits):
+**(a) Human client** — play with the keyboard. Four position buttons pick a
+basket quadrant directly, matching the real four-button device: `A` = left-up,
+`Z` = left-down, `M` = right-down, `K` = right-up (arrow keys still move on the
+two axes). `1` toggles sound, `SPACE` restarts, `ESC`/`Q` quits:
 
 ```bash
 python -m nupogodi.clients.human      # or: nupogodi-human
