@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nupogodi"
+version = "0.1.0"
+description = "Headless, deterministic 'Ну, погоди!' egg-catcher environment with a Gymnasium interface and swappable agents."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "gymnasium>=0.29",
+    "numpy>=1.24",
+    "loguru>=0.7",
+]
+
+[project.optional-dependencies]
+render = ["pygame>=2.5"]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "pygame>=2.5",
+]
+
+[project.scripts]
+nupogodi-human = "nupogodi.clients.human:main"
+nupogodi-random = "nupogodi.agents.random_agent:main"
+
+[tool.setuptools.packages.find]
+include = ["nupogodi*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
