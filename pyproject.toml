@@ -37,6 +37,9 @@ addopts = "-q"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Legacy pre-refactor monolith and the upstream originals are kept for
+# reference but are not held to the new lint rules.
+extend-exclude = ["game.py", "old_sources"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
