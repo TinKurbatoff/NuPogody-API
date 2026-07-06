@@ -6,12 +6,11 @@ nupogodi.agents.random_agent`` runs a rollout and reports steps/sec.
 
 from __future__ import annotations
 
-import time
-
 import numpy as np
 from loguru import logger
 
 from ..env import NuPogodiEnv
+from ..rollout import run
 from .base import Transition
 
 
@@ -29,26 +28,13 @@ class RandomAgent:
 
 
 def rollout(steps: int = 100_000, seed: int = 0) -> tuple[int, float]:
-    """Run ``steps`` headless steps; return (episodes, steps_per_second)."""
-    env = NuPogodiEnv()
-    agent = RandomAgent(seed=seed)
-    obs, _ = env.reset(seed=seed)
+    """Run ``steps`` headless steps; return (episodes, steps_per_second).
 
-    episodes = 0
-    start = time.perf_counter()
-    for _ in range(steps):
-        action = agent.act(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
-        agent.observe(
-            Transition(obs, action, reward, obs, terminated, truncated, info)
-        )
-        if terminated or truncated:
-            episodes += 1
-            obs, _ = env.reset()
-    elapsed = time.perf_counter() - start
-
-    steps_per_sec = steps / elapsed if elapsed else float("inf")
-    return episodes, steps_per_sec
+    A thin wrapper over :func:`nupogodi.rollout.run` with no sinks, so it stays
+    a pure throughput benchmark of the env+agent hot path.
+    """
+    stats = run(NuPogodiEnv(), RandomAgent(seed=seed), steps=steps, seed=seed)
+    return stats.episodes, stats.steps_per_sec
 
 
 def main() -> None:

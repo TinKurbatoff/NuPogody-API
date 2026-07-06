@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nupogodi · live</title>
+<style>
+  :root {
+    --bg:#0f1216; --panel:#171b21; --line:#232a33; --fg:#e6edf3;
+    --muted:#8b98a5; --accent:#5b8def; --mean:#4ade80; --bad:#f2657a; --good:#4ade80;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  header { display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+    padding:16px 20px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.5px; }
+  header .file { color:var(--muted); }
+  #status { margin-left:auto; font-weight:600; }
+  #status.live { color:var(--good); } #status.idle { color:var(--muted); }
+  main { padding:20px; display:grid; gap:20px; max-width:1100px; margin:0 auto; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .tile .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+  .tile .v { font-size:24px; font-weight:600; margin-top:2px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    color:var(--muted); margin:0 0 10px; }
+  canvas { width:100%; height:260px; display:block; }
+  .legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:8px; }
+  .legend b { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; }
+  .rawwrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th,td { text-align:right; padding:4px 10px; white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel); }
+  td.eggs, th.eggs { text-align:left; color:var(--muted); }
+  tr.catch td { color:var(--good); } tr.drop td { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ну, погоди! · live</h1>
+  <span class="file" id="file">waiting for a run…</span>
+  <span id="status" class="idle">○ idle</span>
+</header>
+<main>
+  <section class="tiles" id="tiles"></section>
+  <section class="panel">
+    <h2>episode reward</h2>
+    <canvas id="chart"></canvas>
+    <div class="legend">
+      <span><b style="background:var(--accent)"></b>per episode</span>
+      <span><b style="background:var(--mean)"></b>rolling mean (50)</span>
+      <span><b style="background:#3a4756"></b>zero</span>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>raw steps (last 25)</h2>
+    <div class="rawwrap">
+      <table id="raw">
+        <thead><tr>
+          <th>i</th><th>tick</th><th>action</th><th>wolf</th><th>reward</th>
+          <th>score</th><th>lives</th><th>c/d/s</th><th class="eggs">eggs [q,st,drop]</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+const QUAD = ["LU","LD","RU","RD"];
+const HIST_CAP = 6000;      // max points retained for the whole-run reward curve.
+
+let file = "", offset = 0, meta = {};
+// Counts come from the records' own indices, not from tallying what we ingest:
+// a tail viewer skips an initial window and can lag a fast writer, so a running
+// tally undercounts — but the newest record's index is always the true frontier,
+// and equals the CLI total once we drain to EOF after the run ends.
+let lastStepI = -1, lastEpisode = -1, bestScore = 0, lastReward = null;
+// Bounded, decimated per-episode rewards so render() stays O(HIST_CAP) no matter
+// how long the run gets. `decim` is how many real episodes each kept point spans.
+let hist = [], decim = 1, sinceKept = 0;
+let last100 = [];           // raw rewards for the mean(100) tile (exact, unbounded run).
+let recent = [];            // last 25 raw step records
+let rateBaseI = 0, lastRateT = performance.now(), rate = 0;
+let lastRecvT = 0;
+
+// A run's identity is its base name minus any ``.NNN`` rotation-part suffix, so
+// rolling from run-….jsonl to run-….001.jsonl continues the same view instead of
+// resetting the counters and curve.
+function runId(name) { return name.replace(/\.\d{3}\.jsonl$/, "").replace(/\.jsonl$/, ""); }
+
+function resetAll() {
+  meta = {}; lastStepI = -1; lastEpisode = -1; bestScore = 0; lastReward = null;
+  hist = []; decim = 1; sinceKept = 0; last100 = []; recent = [];
+  rateBaseI = 0; rate = 0;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/tail?file=${encodeURIComponent(file)}&offset=${offset}`);
+    const d = await r.json();
+    if (d.file === null) { setStatus(false); return; }
+    if (d.file !== file) {
+      if (runId(d.file) !== runId(file)) resetAll();  // new run, not just next part.
+      file = d.file;
+    }
+    offset = d.offset;
+    if (d.records.length) { lastRecvT = performance.now(); ingest(d.records); }
+    render();
+    setStatus(performance.now() - lastRecvT < 3000);
+  } catch (e) { setStatus(false); }
+}
+
+function pushHist(v) {
+  // Keep every `decim`-th reward; when the buffer fills, halve its resolution
+  // (drop every other point, double `decim`) so it still spans the whole run.
+  if (++sinceKept < decim) return;
+  sinceKept = 0;
+  hist.push(v);
+  if (hist.length > HIST_CAP) {
+    const h = [];
+    for (let i = 0; i < hist.length; i += 2) h.push(hist[i]);
+    hist = h; decim *= 2;
+  }
+}
+
+function ingest(records) {
+  for (const rec of records) {
+    if (rec.type === "meta") { meta = rec; }
+    else if (rec.type === "episode") {
+      if (rec.episode > lastEpisode) lastEpisode = rec.episode;
+      if (rec.score > bestScore) bestScore = rec.score;
+      lastReward = rec.total_reward;
+      pushHist(rec.total_reward);
+      last100.push(rec.total_reward);
+      if (last100.length > 100) last100.shift();
+    }
+    else if (rec.type === "step") {
+      if (rec.i > lastStepI) lastStepI = rec.i;
+      recent.push(rec);
+      if (recent.length > 25) recent.shift();
+    }
+  }
+  const now = performance.now(), dt = (now - lastRateT) / 1000;
+  if (dt >= 1) { rate = (lastStepI - rateBaseI) / dt; rateBaseI = lastStepI; lastRateT = now; }
+}
+
+function setStatus(live) {
+  const el = document.getElementById("status");
+  el.className = live ? "live" : "idle";
+  el.textContent = live ? "● live" : "○ idle";
+}
+
+function mean(a) { return a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0; }
+
+function render() {
+  document.getElementById("file").textContent =
+    file ? `${file} · ${meta.agent||"?"} agent · seed ${meta.seed??"?"}` : "waiting for a run…";
+  tiles([
+    ["episodes", (lastEpisode + 1).toLocaleString()],
+    ["steps", (lastStepI + 1).toLocaleString()],
+    ["steps/sec", rate > 0 ? Math.round(rate).toLocaleString() : "—"],
+    ["best score", bestScore],
+    ["mean reward (100)", fmt(mean(last100))],
+    ["last reward", lastReward === null ? "—" : fmt(lastReward)],
+  ]);
+  drawChart(hist);
+  drawRaw();
+}
+
+function fmt(x){ return (x>=0?"+":"") + x.toFixed(2); }
+
+function tiles(pairs) {
+  document.getElementById("tiles").innerHTML = pairs.map(
+    ([k,v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+}
+
+function rollmean(a, w) {
+  const out = []; let s = 0;
+  for (let i=0;i<a.length;i++){ s+=a[i]; if(i>=w) s-=a[i-w]; out.push(s/Math.min(i+1,w)); }
+  return out;
+}
+
+function drawChart(rewards) {
+  const cv = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W*dpr; cv.height = H*dpr;
+  const g = cv.getContext("2d"); g.scale(dpr,dpr);
+  g.clearRect(0,0,W,H);
+  if (!rewards.length) return;
+  const pad = {l:38,r:8,t:8,b:18};
+  const n = rewards.length;
+  const roll = rollmean(rewards, 50);
+  // Loop, not Math.min(0, ...rewards): spreading a long array into args throws
+  // RangeError past ~100k elements — the bug that used to freeze the chart.
+  let lo = 0, hi = 0;
+  for (const v of rewards) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (lo===hi){ lo-=1; hi+=1; } const padY=(hi-lo)*0.08; lo-=padY; hi+=padY;
+  const X = i => pad.l + (n<=1?0:(i/(n-1))*(W-pad.l-pad.r));
+  const Y = v => pad.t + (1-(v-lo)/(hi-lo))*(H-pad.t-pad.b);
+  // axes: zero line + min/max/0 labels
+  g.strokeStyle="#232a33"; g.fillStyle="#8b98a5"; g.font="11px monospace"; g.lineWidth=1;
+  for (const val of [hi, 0, lo]) {
+    const y=Y(val); g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y);
+    g.strokeStyle = val===0 ? "#3a4756" : "#1c232b"; g.stroke();
+    g.fillText(val.toFixed(0), 4, y+3);
+  }
+  const stride = Math.max(1, Math.floor(n/1500));
+  // per-episode line
+  g.strokeStyle="rgba(91,141,239,0.55)"; g.lineWidth=1; g.beginPath();
+  for (let i=0;i<n;i+=stride){ const x=X(i),y=Y(rewards[i]); i?g.lineTo(x,y):g.moveTo(x,y); }
+  g.stroke();
+  // rolling mean
+  g.strokeStyle="#4ade80"; g.lineWidth=2; g.beginPath();
+  for (let i=0;i<n;i+=stride){ const x=X(i),y=Y(roll[i]); i?g.lineTo(x,y):g.moveTo(x,y); }
+  g.stroke();
+}
+
+function drawRaw() {
+  const tb = document.querySelector("#raw tbody");
+  tb.innerHTML = recent.slice().reverse().map(s => {
+    const cls = s.caught ? "catch" : (s.dropped ? "drop" : "");
+    const eggs = (s.eggs||[]).map(e=>`[${QUAD[e[0]]},${e[1]}${e[2]?",x":""}]`).join(" ");
+    return `<tr class="${cls}">
+      <td>${s.i}</td><td>${s.tick??""}</td><td>${QUAD[s.action]}</td>
+      <td>${QUAD[s.wolf]??""}</td><td>${fmt(s.reward)}</td>
+      <td>${s.score}</td><td>${s.lives}</td>
+      <td>${s.caught}/${s.dropped}/${s.spawned}</td><td class="eggs">${eggs}</td>
+    </tr>`;
+  }).join("");
+}
+
+poll(); setInterval(poll, 1000);
+</script>
+</body>
+</html>

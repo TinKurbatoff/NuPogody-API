@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from .core import NuPogodiCore
 from .env import NuPogodiEnv
+from .recorder import JsonlRecorder
+from .rollout import EpisodeSummary, RolloutStats, Sink, run
 from .types import (
     Action,
     EggState,
@@ -26,13 +28,18 @@ from .types import (
 __all__ = [
     "Action",
     "EggState",
+    "EpisodeSummary",
     "GameState",
+    "JsonlRecorder",
     "Level",
     "NuPogodiCore",
     "NuPogodiEnv",
     "Quadrant",
+    "RolloutStats",
     "Side",
+    "Sink",
     "StepResult",
+    "run",
 ]
 
 __version__ = "0.1.0"
