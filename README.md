@@ -61,17 +61,39 @@ nupogodi/
   types.py        # Side/Level/Quadrant/Action enums, EggState/GameState dataclasses.
   env.py          # NuPogodiEnv(gymnasium.Env) wrapping the core.
   renderer.py     # PygameRenderer: read-only, draws a GameState. Reuses assets.
-  clients/human.py    # keyboard -> action -> env.step -> render (reference "human agent").
-  agents/             # Agent protocol + random baseline (RL/SNN/CL1 plug in here).
+  rollout.py      # run(env, agent, *, steps|episodes, sinks): the one env↔agent loop.
+  recorder.py     # JsonlRecorder sink -> explorable, tailable JSONL log in runs/.
+  dashboard.py    # dependency-free live web UI that tails the newest run.
+  clients/human.py    # keyboard -> action -> env.step -> render (the "human agent").
+  agents/
+    base.py           # the Agent protocol: act(obs) -> action, observe(transition).
+    random_agent.py   # uniform-random baseline (also the throughput benchmark).
+    cl1_agent.py      # CL1Agent: spiking policy driven through the CL neural interface.
+  cl1/                # the CL1-shaped neural interface (one contract, two backends)
+    api.py            #   ChannelSet/StimDesign/BurstDesign + NeuronsLike protocol.
+    dish.py           #   SpikingDish: responsive BindsNET culture that learns (MSTDPET).
+    hardware.py       #   RealDish: thin adapter over the real Cortical Labs `cl` SDK.
+  record.py / train.py    # CLIs: record a random rollout / train the spiking agent.
   transport/ws_server.py  # WebSocket wrapper (stub) for remote/human/bio clients.
-tests/              # core, determinism, env-checker, renderer, agents/transport.
+tests/              # core, determinism, env-checker, renderer, agents, cl1.
 ```
+
+**Three ways to drive the identical game core** — all speak the same
+`env.step(action)` contract, so none of them touches the core:
+
+| Variant | Who decides the action | Run it |
+| --- | --- | --- |
+| **Human** | you, on the keyboard | `nupogodi-human` |
+| **Random** | a uniform baseline (also the speed benchmark) | `nupogodi-random` |
+| **Spiking / CL1** | a spiking net learning by reward-modulated STDP, through the Cortical Labs interface | `nupogodi-train` |
 
 ## Install
 
 ```bash
 pip install -e '.[dev]'      # core + tests + ruff + pygame
 pip install -e '.[render]'   # add pygame only (for the human client)
+pip install -e '.[snn]'      # add the spiking substrate (BindsNET) for the CL1 agent
+pip install -e '.[cl]'       # optional: the real Cortical Labs cl-sdk (CL1 / official sim)
 ```
 
 ## Environment spec
@@ -120,12 +142,51 @@ for _ in range(1000):
         obs, info = env.reset()
 ```
 
+## (c) Spiking CL1 agent — playing through a Cortical Labs interface
+
+The endgame agent is a **spiking neural network trained by reward-modulated
+STDP**, driven through the *actual* Cortical Labs CL SDK interface shape so the
+integration is rehearsed against the real hardware surface, not a bespoke one.
+
+```bash
+pip install -e '.[snn]'                 # BindsNET substrate (+ a torch._six shim)
+python -m nupogodi.train --episodes 500 # train; or: nupogodi-train
+python -m nupogodi.dashboard            # watch it learn live in the browser
+pip install -e '.[cl]'                  # optional: real cl-sdk (CL1 / official sim)
+```
+
+**One contract, two backends.** The agent (`nupogodi/agents/cl1_agent.py`) speaks
+only the CL-shaped `NeuronsLike` interface (`nupogodi/cl1/api.py`): rate-encode
+the observation into electrode **stimulation** (`ChannelSet` / `StimDesign` /
+`BurstDesign`, within the real ≤200 Hz-per-channel, 20 µs-quantum limits), run a
+decision **window**, read spikes off the motor electrodes, take the most-active
+action. Exploration comes from the culture's own intrinsic noise — no ε-greedy,
+just like DishBrain. `nupogodi.cl1.open(backend=…)` hands the agent either:
+
+* `"sim"` — a **responsive, learning** culture (`SpikingDish`, BindsNET
+  `MSTDPET` = three-factor STDP with eligibility traces). Learning is delivered
+  as a neuromodulatory signal δ (a critic's reward-prediction error = the
+  dopamine analogue) — **no backprop**, because a CL1 can't do backprop.
+* `"hardware"` — a thin adapter over real `cl` (`RealDish`), for CL1 or the
+  official simulator. The identical agent code runs on both.
+
+> **Status — honest.** The full closed loop works and the culture demonstrably
+> learns in isolation (a fixed observation→action mapping shifts under reward).
+> **Convergence to a strong *game* policy is an open research problem**: under
+> the game's sparse, delayed reward the current global-δ readout still sits near
+> the random-agent floor (mean episode reward ≈ −1.9). This is the known
+> "R-STDP is hard to converge" trade-off of choosing biological fidelity over
+> backprop. Tuning levers live on `SpikingDish`/`CL1Agent` (`tc_e_trace`, `nu`,
+> `reward_scale`, `window`) and reward shaping is the likely next lever.
+
 ## Tests & performance
 
 ```bash
 pytest          # core rules, determinism, gymnasium env-checker, renderer, agents
 ruff check .
 ```
+
+The spiking agent's tests skip cleanly when the `snn` extra isn't installed.
 
 The env runs fully headless (no display, no audio). On this machine the random
 agent sustains **~100,000 steps/sec** (measured over 200k steps / ~15,600
